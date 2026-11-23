@@ -1,0 +1,171 @@
+HTML
+
+<!DOCTYPE html>
+<html lang="my">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Movie Cutter Pro</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101322;color:white;font-family:Arial,sans-serif;padding:20px}
+.container{max-width:600px;margin:auto}
+h1{color:#65e6b1;text-align:center}
+.card{background:#1c2336;padding:18px;border-radius:15px;margin:16px 0}
+button{background:#16bd83;color:white;border:0;padding:13px;border-radius:9px;font-size:16px;width:100%;margin-top:12px}
+input{width:100%;padding:12px;margin:8px 0;border-radius:8px}
+video{width:100%;max-height:400px;background:#000;border-radius:10px}
+label{display:block;margin-top:12px;color:#bfc8dc}
+small{color:#aab3c7}
+#status{color:#65e6b1;white-space:pre-wrap}
+a{color:#65e6b1}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🎬 AI MOVIE CUTTER PRO</h1>
+<p style="text-align:center">Create TikTok & Facebook Reels</p>
+
+<div class="card">
+<h3>① Select Your Movie</h3>
+<input type="file" id="movie" accept="video/*">
+<video id="preview" controls playsinline></video>
+</div>
+
+<div class="card">
+<h3>② Choose Your Clip</h3>
+<label>Start time (seconds)</label>
+<input id="start" type="number" value="0" min="0">
+<label>End time (seconds)</label>
+<input id="end" type="number" value="60" min="1">
+<label>Video format</label>
+<select id="format" style="width:100%;padding:12px;border-radius:8px">
+<option value="vertical">TikTok / Reels (9:16)</option>
+<option value="original">Original size</option>
+</select>
+<button id="process">✂️ Create Short Video</button>
+<p id="status">Ready to start.</p>
+</div>
+
+<div class="card">
+<h3>③ Download Your Video</h3>
+<a id="download" style="display:none" download="movie-short.mp4">
+<button>⬇ Download MP4</button>
+</a>
+<video id="result" controls playsinline></video>
+</div>
+</div>
+
+<script type="module">
+import { FFmpeg } from
+'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js';
+import { toBlobURL } from
+'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js';
+
+const ffmpeg = new FFmpeg();
+const movie = document.getElementById('movie');
+const preview = document.getElementById('preview');
+const status = document.getElementById('status');
+const processBtn = document.getElementById('process');
+let loaded = false;
+let inputURL = null;
+let outputURL = null;
+
+movie.addEventListener('change', () => {
+  const file = movie.files[0];
+  if (!file) return;
+  if (inputURL) URL.revokeObjectURL(inputURL);
+  inputURL = URL.createObjectURL(file);
+  preview.src = inputURL;
+  document.getElementById('end').value = 60;
+  status.textContent = 'Movie selected: ' + file.name;
+});
+
+processBtn.addEventListener('click', async () => {
+  const file = movie.files[0];
+  if (!file) {
+    alert('Please select a movie first.');
+    return;
+  }
+
+  const start = Number(document.getElementById('start').value);
+  const end = Number(document.getElementById('end').value);
+
+  if (start < 0 || end <= start || end > preview.duration) {
+    alert('Please enter valid start and end times.');
+    return;
+  }
+
+  processBtn.disabled = true;
+  try {
+    if (!loaded) {
+      status.textContent = 'Loading video engine... Please wait.';
+      ffmpeg.on('progress', ({ progress }) => {
+        status.textContent = 'Processing: ' +
+          Math.round(progress * 100) + '%';
+      });
+
+      const base = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
+      await ffmpeg.load({
+        coreURL: await toBlobURL(base + '/ffmpeg-core.js', 'text/javascript'),
+        wasmURL: await toBlobURL(base + '/ffmpeg-core.wasm', 'application/wasm')
+      });
+      loaded = true;
+    }
+
+    status.textContent = 'Preparing movie...';
+    const ext = file.name.split('.').pop().toLowerCase();
+    const inputName = 'input.' + ext;
+    await ffmpeg.writeFile(inputName, new Uint8Array(await file.arrayBuffer()));
+
+    const duration = end - start;
+    const args = [
+      '-ss', String(start),
+      '-i', inputName,
+      '-t', String(duration)
+    ];
+
+    if (document.getElementById('format').value === 'vertical') {
+      args.push(
+        '-vf',
+        'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920'
+      );
+    }
+
+    args.push(
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-crf', '25',
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-movflags', '+faststart',
+      'output.mp4'
+    );
+
+    status.textContent = 'Creating your MP4 video...';
+    await ffmpeg.exec(args);
+
+    const data = await ffmpeg.readFile('output.mp4');
+    const blob = new Blob([data], { type: 'video/mp4' });
+
+    if (outputURL) URL.revokeObjectURL(outputURL);
+    outputURL = URL.createObjectURL(blob);
+
+    document.getElementById('result').src = outputURL;
+    const download = document.getElementById('download');
+    download.href = outputURL;
+    download.style.display = 'block';
+
+    status.textContent = '✅ Video created successfully!';
+    await ffmpeg.deleteFile(inputName);
+    await ffmpeg.deleteFile('output.mp4');
+
+  } catch (error) {
+    status.textContent = 'Error: ' + error.message;
+  } finally {
+    processBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
